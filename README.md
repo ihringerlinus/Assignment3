@@ -23,7 +23,21 @@ As with the previous assignments, create a private fork of this repository and c
 ```java-project``` :  This is the Java project that you can load in to VSCode, IntelliJ, etc. and use for your development.
 ```datasets``` : This is where you can place the dataset files (see next step)
 
-**Important node for Mac users:**  There are a bunch of shell scripts in the ```docker-containers\docker``` folder. You need to enable execute (``x``) permission on these. You can do this by opening a shell terminal and ``cd`` to ```<repo root>>\docker-containers\docker``` and doing ```sudo chmod 777 *.*```.
+**Important note for Mac users:**  There are a bunch of shell scripts in the ```docker-containers\docker``` folder. You need to enable execute (``x``) permission on these. You can do this by opening a shell terminal and ``cd`` to ```<repo root>>\docker-containers\docker``` and doing ```sudo chmod 777 *.*```.
+
+
+**Important note for Windows users: Ensure line endings of the startup script**
+
+[Line endings on Windows and Unix are different.](https://stackoverflow.com/a/426404). Some files are mounted into the container and must be executable there. This is not possible, if the line endings do not match. To ensure that they do, open the folder that contains the assignment package in your IDE, e.g. in VS Code (see Figure 1). Check the line endings symbol and click on it _if it shows_ `CRLF` and set it to `LF`  (see Figure 2). Save all files.
+
+![Files that need adjustment](images/line-endings-files.png)
+
+_Figure 1:_ Files that need adjustment
+
+![Line ending in VS Code](images/line-endings-format.jpg)
+
+_Figure 2:_ Symbol to toggle the line endings in VS Code
+
 
 ## The unusual step - copy the dataset files
 
