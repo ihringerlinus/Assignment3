@@ -48,7 +48,9 @@ public class TaskRoomSensorTelemetry {
             // Step A: Calculate Average CO2 per hour grouped by month
             // Order by month and then hour to ensure correct sequence for window function within each month
 
-            // Dataset<Row> hourlyAvgCo2 = df....; //You need to act upon the dataframe
+            Dataset<Row> hourlyAvgCo2 = df.groupBy("month", "hour")
+                    .agg(avg("co2").alias("avg_co2"))
+                    .orderBy("month", "hour");
 
             //You can use show to debug if things are going well. But remove show before deploying.
             //System.out.println("\n--- Hourly Average CO2 with Month (first 10 rows) ---");
@@ -60,6 +62,9 @@ public class TaskRoomSensorTelemetry {
             // only look at previous rows within the same month partition.
 
             WindowSpec windowSpec = Window.partitionBy("month").orderBy("hour");
+            Dataset<Row> co2Differences = hourlyAvgCo2
+                    .withColumn("prev_co2", lag("avg_co2", 1).over(windowSpec))
+                    .withColumn("delta", col("avg_co2").minus(col("prev_co2")));
 
             //Dataset<Row> co2Differences = hourlyAvgCo2...
 
@@ -74,10 +79,15 @@ public class TaskRoomSensorTelemetry {
             // and negative changes for max decrease. If a month has no increases/decreases,
             // the corresponding result will be null.
 
-            //Dataset<Row> monthWiseResults = co2Differences...;
+            Dataset<Row> monthWiseResults = co2Differences.groupBy("month")
+                    .agg(
+                            max(when(col("delta").gt(0), col("delta"))).alias("max_increase"),
+                            min(when(col("delta").lt(0), col("delta"))).alias("max_decrease")
+                    )
+                    .orderBy("month");
 
-            //System.out.println("\n--- Month-wise maximum CO2 increase and decrease results ---");
-            //monthWiseResults.show();
+            System.out.println("\n--- Month-wise maximum CO2 increase and decrease ---");
+            monthWiseResults.show();
 
 
             //-------------------------------------------------------------------------------------------
@@ -92,9 +102,26 @@ public class TaskRoomSensorTelemetry {
             // And, between weekday and CO2
             //double weekdayCorrelation = df...;
             //System.out.printf("Global Correlation between day of week and CO2: %.4f%n%n", weekdayCorrelation);
+            double monthCorrelation = df.stat().corr("month", "co2");
+            double hourCorrelation = df.stat().corr("hour", "co2");
+            double weekdayCorrelation = df.stat().corr("weekday", "co2");
+
+            System.out.printf("Correlation between month and CO2: %.4f%n", monthCorrelation);
+            System.out.printf("Correlation between hour and CO2: %.4f%n", hourCorrelation);
+            System.out.printf("Correlation between weekday and CO2: %.4f%n", weekdayCorrelation);
+
             //-------------------------------------------------------------------------------------------
 
             //What you see? Which factor affects CO2 in room most?
+            System.out.println("\n--- Interpretation ---");
+            if (Math.abs(hourCorrelation) > Math.abs(monthCorrelation) &&
+                    Math.abs(hourCorrelation) > Math.abs(weekdayCorrelation)) {
+                System.out.println("CO2 levels vary the most with hour of the day (daily pattern).");
+            } else if (Math.abs(monthCorrelation) > Math.abs(weekdayCorrelation)) {
+                System.out.println("CO2 levels are most affected by seasonal (monthly) changes.");
+            } else {
+                System.out.println("CO2 levels depend more on day of the week (weekday patterns).");
+            }
 
             LOGGER.info("Analysis completed successfully.");
 

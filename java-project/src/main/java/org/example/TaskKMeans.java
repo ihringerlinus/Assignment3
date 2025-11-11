@@ -8,7 +8,6 @@ import org.apache.spark.broadcast.Broadcast;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
-import org.apache.spark.sql.execution.streaming.state.StreamingAggregationStateManagerImplV1;
 import scala.Tuple2;
 
 import java.io.Serializable;
@@ -16,7 +15,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Random;
-import java.util.stream.Collectors;
+import static org.apache.spark.sql.functions.col;
 
 public class TaskKMeans implements Serializable {
 
@@ -58,8 +57,14 @@ public class TaskKMeans implements Serializable {
      * @return The Euclidean distance.
      */
     public static double euclideanDistance(double[] v1, double[] v2) {
-
-        return 0.0;
+        double sum = 0.0;
+        if (v1 == null || v2 == null || v1.length != v2.length) {
+            return Double.MAX_VALUE;
+        }
+        for (int i = 0; i < v1.length; i++) {
+            sum += Math.pow(v1[i] - v2[i], 2);
+        }
+        return Math.sqrt(sum);
     }
 
     /**
@@ -72,6 +77,13 @@ public class TaskKMeans implements Serializable {
         double minDistance = Double.MAX_VALUE;
         int closestCentroidId = -1;
 
+        for (int i = 0; i < centroids.size(); i++) {
+            double distance = euclideanDistance(point.getFeatures(), centroids.get(i).getFeatures());
+            if (distance < minDistance) {
+                minDistance = distance;
+                closestCentroidId = i;
+            }
+        }
         return closestCentroidId;
     }
 
@@ -81,8 +93,30 @@ public class TaskKMeans implements Serializable {
      * @return A new DataPoint representing the mean of the cluster.
      */
     public static DataPoint calculateNewCentroid(Iterable<DataPoint> pointsInCluster) {
+        long count = 0;
+        double[] featureSum = null;
+        int numFeatures = 0;
 
-        return new DataPoint(null /* newCentroidFeatures*/);
+        for (DataPoint point : pointsInCluster) {
+            if (featureSum == null) {
+                numFeatures = point.getFeatures().length;
+                featureSum = new double[numFeatures];
+            }
+            for (int i = 0; i < numFeatures; i++) {
+                featureSum[i] += point.getFeatures()[i];
+            }
+            count++;
+        }
+
+        if (count == 0) {
+            return new DataPoint(new double[0]);
+        }
+
+        double[] newCentroidFeatures = new double[numFeatures];
+        for (int i = 0; i < numFeatures; i++) {
+            newCentroidFeatures[i] = featureSum[i] / count;
+        }
+        return new DataPoint(newCentroidFeatures);
     }
 
 
@@ -109,7 +143,7 @@ public class TaskKMeans implements Serializable {
         rawData = rawData.drop("timestamp").drop("unix_timestamp");
 
         //Filter out potentially noisy data
-        //rawData = rawData.filter();
+        rawData = rawData.filter(col("volume").geq(50));
 
         System.out.println("Schema of loaded CSV:");
         rawData.printSchema();
@@ -145,7 +179,7 @@ public class TaskKMeans implements Serializable {
         }).cache(); // Cache the RDD as it will be used once for final assignment
 
         // K-Means Parameters
-        final int k = 4; // Number of clusters
+        final int k = 4;
         final int maxIterations = 100;
         final double convergenceThreshold = 1e-4; // How much centroids can change before stopping
 
@@ -162,32 +196,51 @@ public class TaskKMeans implements Serializable {
             System.out.println("\nIteration " + (iter + 1));
 
             // Broadcast current centroids to all worker nodes
-
+            Broadcast<List<DataPoint>> centroidsBroadcast = jsc.broadcast(currentCentroids);
 
             // E-step: Assign each training data point to its closest centroid
-
+            JavaPairRDD<Integer, DataPoint> pointsWithClusterId = trainingDataRDD.mapToPair(point -> {
+                int closestCentroidId = findClosestCentroid(point, centroidsBroadcast.value());
+                return new Tuple2<>(closestCentroidId, point);
+            });
 
             // M-step: Calculate new centroids based on the mean of assigned points
-
+            JavaPairRDD<Integer, DataPoint> newCentroidsById = pointsWithClusterId
+                    .groupByKey()
+                    .mapValues(TaskKMeans::calculateNewCentroid);
+            List<DataPoint> newCentroidsList = new ArrayList<>(currentCentroids);
+            List<Tuple2<Integer, DataPoint>> collectedCentroids = newCentroidsById.collect();
 
             // Collect new centroids to the driver and sort them by ID
-
+            for (Tuple2<Integer, DataPoint> pair : collectedCentroids) {
+                if (pair._1() >= 0 && pair._1() < k) {
+                    newCentroidsList.set(pair._1(), pair._2());
+                }
+            }
 
             // Check for convergence
             boolean converged = true;
-
+            double totalChange = 0.0;
+            for (int i = 0; i < k; i++) {
+                double change = euclideanDistance(currentCentroids.get(i).getFeatures(), newCentroidsList.get(i).getFeatures());
+                totalChange += change;
+                if (change > convergenceThreshold) {
+                    converged = false;
+                }
+            }
 
             // Update centroids for next iteration
+            currentCentroids = newCentroidsList;
 
             System.out.println("Current Centroids:");
-            //currentCentroids.forEach(c -> System.out.println(Arrays.toString(c.getFeatures())));
+            currentCentroids.forEach(c -> System.out.println(Arrays.toString(c.getFeatures())));
+            System.out.println("Total centroid change: " + totalChange);
 
             if (converged) {
                 System.out.println("\nK-Means converged after " + (iter + 1) + " iterations.");
                 break;
             }
         }
-
         // Testing Assign test data points to clusters
         System.out.println("\n--- Test Data Cluster Assignments ---");
         Broadcast<List<DataPoint>> finalCentroidsBroadcast = jsc.broadcast(currentCentroids);

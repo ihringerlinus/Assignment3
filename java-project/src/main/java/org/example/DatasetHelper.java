@@ -20,7 +20,7 @@ public class DatasetHelper {
     private static final Logger LOGGER = LoggerFactory.getLogger(DatasetHelper.class);
     public static Dataset<Row> getDataset(SparkSession sparkSession, String datasetFileName, boolean local){
 
-        String datasetFilePath = local ? "../datasets/" + datasetFileName : "hdfs://namenode:9000/datasets/" + datasetFileName;
+        String datasetFilePath = local ? "datasets/" + datasetFileName : "hdfs://namenode:9000/datasets/" + datasetFileName;
         String hdfsDatasetPath = "hdfs://namenode:9000/datasets/";
 
         // Define the schema for the CSV data
