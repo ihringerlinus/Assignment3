@@ -35,6 +35,14 @@ JavaPairRDD<String, Integer> counts = words
 
 
 ![output.png](images/output.png)
+
+Interpretation:
+As the number of cores allocated increases, the average time taken for completion generally decreases, 
+indicating improved performance due to parallel processing. 
+However, the performance gain is not linear, as seen with 4 cores, where the time taken is slightly higher than with 2 cores. 
+This could be due to overhead from managing multiple threads and context switching. The standard deviation also decreases with more cores, suggesting more consistent performance as parallelism increases.
+
+
 4. Examine the execution history. Explain your observations regarding the planning of jobs, stages, and tasks. (0.4 pt)
 1 Job was created for the entire word count operation. This job was divided into 2 stages:
 - Stage 0: This stage involved reading the input data and performing the flatMap operation to split the text into individual words.
@@ -47,7 +55,7 @@ tasks were distributed across the available cores, allowing for parallel process
 
 Each computation in Spark is translated into stages and tasks
 Stage 1 (groupby): Spark performs a wide transformation which causes data shuffling. records with the same key (month,hour) need to be sent to the same executor
-Stage 2 (Window function): This stage involves a narrow transformation where each partition can be processed independently without shuffling. The window function operates on the data within each partition.
+Stage 2 (Window function): This stage involves a wide transformation where each partition can be processed independently without shuffling. The window function operates on the data within each partition.
 Stage 3 (aggregation for min/max): This stage involves another wide transformation that requires shuffling. Records need to be grouped by month to compute the min and max temperatures, which necessitates data movement across the cluster.
 
 2. You had to manually partition the data. Why was this essential? Which feature of the dataset did you use to partition and why?(0.5pt)
